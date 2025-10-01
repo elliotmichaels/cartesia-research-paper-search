@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Paper Auto-Updater</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 min-h-screen p-6">
+    <div class="max-w-6xl mx-auto">
+        <div class="bg-white rounded-xl shadow-2xl overflow-hidden">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        <div>
+                            <h1 class="text-2xl font-bold">Research Paper Auto-Updater</h1>
+                            <p class="text-blue-100 text-sm">SSMs, Mamba, S4 & Sequential Models</p>
+                        </div>
+                    </div>
+                    <button onclick="toggleConfig()" class="p-2 bg-blue-500 hover:bg-blue-400 rounded-lg transition-colors">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Configuration Panel -->
+            <div id="configPanel" class="border-b bg-slate-50 p-6">
+                <h2 class="text-lg font-semibold mb-4">Step 1: API Configuration</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Airtable API Key</label>
+                        <input type="password" id="airtableKey" placeholder="patXXXXXXXXXXXXXX" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Airtable Base ID</label>
+                        <input type="text" id="airtableBase" placeholder="appXXXXXXXXXXXXXX" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Airtable Table Name</label>
+                        <input type="text" id="airtableTable" placeholder="Conference Publications" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <button onclick="fetchAirtableFields()" id="fetchBtn" class="w-full mt-6 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded-lg">
+                            Fetch Table Columns
+                        </button>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">SerpAPI Key</label>
+                        <input type="password" id="serpapiKey" placeholder="Optional" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Semantic Scholar API Key</label>
+                        <input type="password" id="semanticKey" placeholder="Optional" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                    </div>
+                </div>
+
+                <!-- Field Mapping -->
+                <div id="fieldMappingSection" class="hidden">
+                    <h2 class="text-lg font-semibold mb-4 mt-6">Step 2: Map Your Columns</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-4 rounded-lg border" id="fieldMappingGrid"></div>
+                </div>
+
+                <!-- Search Instructions -->
+                <h3 class="text-md font-semibold mb-3 mt-6">Step 3: Describe What Papers You Want</h3>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                    <p class="text-sm text-blue-900">💬 <strong>Write naturally!</strong> The app will extract search terms.</p>
+                </div>
+                <textarea id="searchPrompt" rows="3" class="w-full px-3 py-2 border rounded-lg" placeholder="e.g., Find one recent paper on Mamba">Find recent papers on state space models and Mamba</textarea>
+                
+                <div class="mt-4 grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Max Results Per Search</label>
+                        <input type="number" id="maxResults" value="10" min="1" max="50" class="w-full px-3 py-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Venue Filter (Optional)</label>
+                        <input type="text" id="venueFilter" placeholder="ICML, NeurIPS" class="w-full px-3 py-2 border rounded-lg">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Run Button -->
+            <div class="p-6 bg-white border-b">
+                <button onclick="runSearch()" id="runBtn" disabled class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-4 rounded-lg">
+                    Run Search & Update Airtable
+                </button>
+            </div>
+
+            <!-- Logs -->
+            <div id="logsSection" class="p-6 bg-slate-50 hidden">
+                <h3 class="font-semibold mb-3">Activity Log</h3>
+                <div id="logsList" class="bg-white rounded-lg border max-h-60 overflow-y-auto"></div>
+            </div>
+
+            <!-- Results -->
+            <div id="resultsSection" class="p-6 hidden">
+                <h3 id="resultsTitle" class="font-semibold mb-4">Results</h3>
+                <div id="resultsList" class="space-y-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let airtableFields = [];
+        let candidatesFields = [];
+        let expertiseFields = [];
+        let fieldMapping = {
+            title: '', abstract: '', authors: '', date: '', url: '', source: '',
+            addedDate: '', leadAuthor: '', coAuthors: '', expertiseAreas: '', conference: '',
+            candidateName: '',
+            expertiseName: ''
+        };
+
+        const expertiseKeywords = {
+            'SSMs': ['state space model', 'ssm', 's4', 'structured state space'],
+            'Hybrid Architecture (Mamba etc)': ['mamba', 'hybrid architecture'],
+            'Transformers': ['transformer', 'attention'],
+            'Audio Processing': ['audio processing'],
+            'Audio Generation': ['audio generation', 'speech synthesis'],
+            'Multi-Modal': ['multimodal', 'multi-modal'],
+            'AV/CV': ['computer vision', 'image', 'video'],
+            'NLP': ['natural language', 'nlp'],
+            'Long-Context Reasoning': ['long context', 'long-range'],
+            'Model Architecture': ['model architecture']
+        };
+
+        function toggleConfig() {
+            document.getElementById('configPanel').classList.toggle('hidden');
+        }
+
+        function addLog(message, type = 'info') {
+            const logsSection = document.getElementById('logsSection');
+            const logsList = document.getElementById('logsList');
+            logsSection.classList.remove('hidden');
+            
+            const colorClass = type === 'error' ? 'text-red-600' : 
+                               type === 'success' ? 'text-green-600' : 
+                               type === 'warning' ? 'text-yellow-600' : 'text-gray-700';
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = 'px-4 py-2 border-b text-sm';
+            logEntry.innerHTML = `<span class="${colorClass}">${message}</span>`;
+            logsList.appendChild(logEntry);
+        }
+
+        async function fetchAirtableFields() {
+            const apiKey = document.getElementById('airtableKey').value.trim();
+            const baseId = document.getElementById('airtableBase').value.trim();
+            const tableName = document.getElementById('airtableTable').value.trim();
+
+            if (!apiKey || !baseId || !tableName) {
+                alert('Please enter all Airtable credentials');
+                return;
+            }
+
+            try {
+                const response = await fetch(`https://api.airtable.com/v0/meta/bases/${baseId}/tables`, {
+                    headers: { 'Authorization': 'Bearer ' + apiKey }
+                });
+
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const data = await response.json();
+                
+                // Get Conference Publications table
+                const table = data.tables.find(t => t.name === tableName);
+                if (!table) throw new Error(`Table "${tableName}" not found`);
+                airtableFields = table.fields;
+                
+                // Get Candidates table
+                const candidatesTable = data.tables.find(t => t.name === 'Candidates');
+                if (candidatesTable) {
+                    candidatesFields = candidatesTable.fields;
+                    addLog('Found Candidates table', 'success');
+                } else {
+                    addLog('Warning: Candidates table not found', 'warning');
+                }
+                
+                // Get Expertise Areas table
+                const expertiseTable = data.tables.find(t => t.name === 'Expertise Areas');
+                if (expertiseTable) {
+                    expertiseFields = expertiseTable.fields;
+                    addLog('Found Expertise Areas table', 'success');
+                } else {
+                    addLog('Warning: Expertise Areas table not found', 'warning');
+                }
+                
+                // Auto-map
+                fieldMapping.title = airtableFields.find(f => f.name.toLowerCase().includes('title'))?.name || '';
+                fieldMapping.conference = airtableFields.find(f => f.name.toLowerCase().includes('conference'))?.name || '';
+                fieldMapping.leadAuthor = airtableFields.find(f => f.name === 'Lead Author')?.name || '';
+                fieldMapping.coAuthors = airtableFields.find(f => f.name === 'Co-Authors')?.name || '';
+                fieldMapping.expertiseAreas = airtableFields.find(f => f.name === 'Expertise Areas')?.name || '';
+                
+                // Auto-map candidate name field (look for "name" or first text field)
+                if (candidatesFields.length > 0) {
+                    fieldMapping.candidateName = candidatesFields.find(f => f.name.toLowerCase().includes('name'))?.name || candidatesFields[0].name;
+                    addLog(`Using Candidates field: "${fieldMapping.candidateName}"`, 'info');
+                }
+                
+                // Auto-map expertise name field
+                if (expertiseFields.length > 0) {
+                    fieldMapping.expertiseName = expertiseFields.find(f => f.name.toLowerCase().includes('name'))?.name || expertiseFields[0].name;
+                    addLog(`Using Expertise Areas field: "${fieldMapping.expertiseName}"`, 'info');
+                }
+
+                renderFieldMapping();
+                document.getElementById('runBtn').disabled = false;
+                addLog('Columns fetched successfully', 'success');
+            } catch (error) {
+                addLog('Error: ' + error.message, 'error');
+            }
+        }
+
+        function renderFieldMapping() {
+            const section = document.getElementById('fieldMappingSection');
+            const grid = document.getElementById('fieldMappingGrid');
+            section.classList.remove('hidden');
+            
+            const fields = ['title', 'abstract', 'authors', 'date', 'url', 'source', 'conference', 'addedDate', 'leadAuthor', 'coAuthors', 'expertiseAreas'];
+            const labels = ['Title', 'Abstract', 'Authors (Text)', 'Date', 'URL', 'Source', 'Conference', 'Date Added', 'Lead Author (Linked)', 'Co-Authors (Linked)', 'Expertise (Linked)'];
+            
+            let html = fields.map((key, i) => `
+                <div>
+                    <label class="block text-sm font-medium mb-1">${labels[i]}</label>
+                    <select id="field_${key}" onchange="fieldMapping.${key} = this.value" class="w-full px-3 py-2 border rounded-lg">
+                        <option value="">Skip</option>
+                        ${airtableFields.map(f => `<option value="${f.name}" ${fieldMapping[key] === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
+                    </select>
+                </div>
+            `).join('');
+            
+            // Add Candidates name field mapping
+            if (candidatesFields.length > 0) {
+                html += `
+                    <div class="md:col-span-2 bg-yellow-50 p-3 rounded border">
+                        <label class="block text-sm font-medium mb-1">👤 Candidates Table: Name Field</label>
+                        <select id="field_candidateName" onchange="fieldMapping.candidateName = this.value" class="w-full px-3 py-2 border rounded-lg">
+                            ${candidatesFields.map(f => `<option value="${f.name}" ${fieldMapping.candidateName === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
+                        </select>
+                        <p class="text-xs text-gray-600 mt-1">Which field stores the author's name in Candidates table?</p>
+                    </div>
+                `;
+            }
+            
+            // Add Expertise name field mapping
+            if (expertiseFields.length > 0) {
+                html += `
+                    <div class="md:col-span-2 bg-blue-50 p-3 rounded border">
+                        <label class="block text-sm font-medium mb-1">🎯 Expertise Areas Table: Name Field</label>
+                        <select id="field_expertiseName" onchange="fieldMapping.expertiseName = this.value" class="w-full px-3 py-2 border rounded-lg">
+                            ${expertiseFields.map(f => `<option value="${f.name}" ${fieldMapping.expertiseName === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
+                        </select>
+                        <p class="text-xs text-gray-600 mt-1">Which field stores the expertise area name?</p>
+                    </div>
+                `;
+            }
+            
+            grid.innerHTML = html;
+        }
+
+        async function runSearch() {
+            if (!fieldMapping.title) {
+                alert('Please map at least the Title field');
+                return;
+            }
+
+            const runBtn = document.getElementById('runBtn');
+            runBtn.disabled = true;
+            runBtn.innerHTML = 'Searching...';
+
+            document.getElementById('logsList').innerHTML = '';
+            
+            const searchPrompt = document.getElementById('searchPrompt').value.trim();
+            const maxResults = parseInt(document.getElementById('maxResults').value) || 10;
+            const venueFilter = document.getElementById('venueFilter').value.trim();
+            
+            addLog('Starting search across all sources...', 'info');
+            
+            const searchTerms = extractSearchTerms(searchPrompt);
+            addLog(`Search terms: ${searchTerms.join(', ')}`, 'info');
+            
+            const serpapiKey = document.getElementById('serpapiKey').value;
+            const semanticKey = document.getElementById('semanticKey').value;
+            
+            const allPapers = [];
+
+            for (const term of searchTerms) {
+                addLog(`Searching for: "${term}"`, 'info');
+                
+                const arxivResults = await searchArxiv(term, maxResults);
+                const semanticResults = await searchSemanticScholar(term, semanticKey, maxResults);
+                const scholarResults = await searchGoogleScholar(term, serpapiKey, maxResults);
+
+                allPapers.push(...arxivResults, ...semanticResults, ...scholarResults);
+            }
+
+            let uniquePapers = Array.from(new Map(allPapers.map(p => [p.title.toLowerCase(), p])).values());
+            addLog(`Found ${uniquePapers.length} unique papers`, 'success');
+            
+            if (venueFilter) {
+                const beforeFilter = uniquePapers.length;
+                uniquePapers = filterByVenue(uniquePapers, venueFilter);
+                addLog(`Filtered to ${uniquePapers.length} papers (${beforeFilter - uniquePapers.length} removed)`, 'info');
+            }
+            
+            displayResults(uniquePapers);
+
+            if (uniquePapers.length > 0) {
+                const existingData = await fetchExistingRecords();
+                addLog('Adding papers to Airtable...', 'info');
+                const result = await addToAirtable(uniquePapers, existingData);
+                addLog(`Complete! Added ${result.success}, skipped ${result.skipped}, failed ${result.failed}`, 'success');
+            }
+
+            runBtn.disabled = false;
+            runBtn.innerHTML = 'Run Search & Update Airtable';
+        }
+
+        function extractSearchTerms(prompt) {
+            const terms = [];
+            const quotedMatches = prompt.match(/"([^"]+)"/g);
+            if (quotedMatches) {
+                terms.push(...quotedMatches.map(q => q.replace(/"/g, '')));
+            }
+            
+            const techTerms = prompt.match(/\b(SSM|S4|mamba|transformer|attention|architecture)\b/gi);
+            if (techTerms) {
+                terms.push(...techTerms.map(t => t.toLowerCase()));
+            }
+            
+            return terms.length > 0 ? [...new Set(terms)] : [prompt];
+        }
+
+        function filterByVenue(papers, venueFilter) {
+            if (!venueFilter) return papers;
+            const venues = venueFilter.split(',').map(v => v.trim().toLowerCase());
+            return papers.filter(paper => {
+                const conf = paper.conference.toLowerCase();
+                return venues.some(venue => conf.includes(venue));
+            });
+        }
+
+        async function searchArxiv(query, maxResults) {
+            try {
+                const response = await fetch(`https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(query)}&start=0&max_results=${maxResults}&sortBy=submittedDate&sortOrder=descending`);
+                const text = await response.text();
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(text, 'text/xml');
+                const entries = xml.querySelectorAll('entry');
+                
+                const papers = [];
+                entries.forEach(entry => {
+                    const title = entry.querySelector('title')?.textContent?.trim();
+                    const summary = entry.querySelector('summary')?.textContent?.trim();
+                    const published = entry.querySelector('published')?.textContent;
+                    const link = entry.querySelector('id')?.textContent;
+                    const authors = Array.from(entry.querySelectorAll('author name')).map(a => a.textContent);
+                    
+                    if (title && summary) {
+                        papers.push({
+                            title, abstract: summary,
+                            authors: authors.join(', '),
+                            date: published?.split('T')[0],
+                            url: link, source: 'arXiv',
+                            conference: 'Preprint (arXiv)'
+                        });
+                    }
+                });
+                return papers;
+            } catch (error) {
+                addLog(`ArXiv error: ${error.message}`, 'error');
+                return [];
+            }
+        }
+
+        async function searchSemanticScholar(query, apiKey, maxResults) {
+            if (!apiKey) return [];
+            try {
+                const response = await fetch(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(query)}&limit=${maxResults}&fields=title,abstract,authors,year,url,publicationDate,venue`, {
+                    headers: { 'x-api-key': apiKey }
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                return data.data.map(paper => ({
+                    title: paper.title,
+                    abstract: paper.abstract || 'No abstract',
+                    authors: paper.authors?.map(a => a.name).join(', ') || 'Unknown',
+                    date: paper.publicationDate || paper.year?.toString() || '',
+                    url: paper.url,
+                    source: 'Semantic Scholar',
+                    conference: paper.venue || 'Unknown'
+                }));
+            } catch (error) {
+                addLog(`Semantic Scholar error: ${error.message}`, 'error');
+                return [];
+            }
+        }
+
+        async function searchGoogleScholar(query, apiKey, maxResults) {
+            if (!apiKey) return [];
+            try {
+                const response = await fetch(`https://serpapi.com/search.json?engine=google_scholar&q=${encodeURIComponent(query)}&num=${maxResults}&api_key=${apiKey}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                return (data.organic_results || []).map(paper => ({
+                    title: paper.title,
+                    abstract: paper.snippet || 'No abstract',
+                    authors: paper.publication_info?.authors?.map(a => a.name).join(', ') || 'Unknown',
+                    date: paper.publication_info?.summary?.match(/\d{4}/)?.[0] || '',
+                    url: paper.link,
+                    source: 'Google Scholar',
+                    conference: paper.publication_info?.summary || 'Unknown'
+                }));
+            } catch (error) {
+                addLog(`Google Scholar error: ${error.message}`, 'error');
+                return [];
+            }
+        }
+
+        async function fetchExistingRecords() {
+            const apiKey = document.getElementById('airtableKey').value.trim();
+            const baseId = document.getElementById('airtableBase').value.trim();
+            const tableName = document.getElementById('airtableTable').value.trim();
+
+            try {
+                let allRecords = [];
+                let offset = null;
+
+                do {
+                    const url = offset 
+                        ? `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}?offset=${offset}`
+                        : `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`;
+                    
+                    const response = await fetch(url, {
+                        headers: { 'Authorization': 'Bearer ' + apiKey }
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    allRecords = allRecords.concat(data.records);
+                    offset = data.offset;
+                } while (offset);
+
+                addLog(`Found ${allRecords.length} existing records`, 'info');
+
+                const existingData = { titles: new Set(), urls: new Set() };
+                allRecords.forEach(record => {
+                    if (fieldMapping.title && record.fields[fieldMapping.title]) {
+                        existingData.titles.add(record.fields[fieldMapping.title].toLowerCase().trim());
+                    }
+                    if (fieldMapping.url && record.fields[fieldMapping.url]) {
+                        existingData.urls.add(record.fields[fieldMapping.url].toLowerCase().trim());
+                    }
+                });
+
+                return existingData;
+            } catch (error) {
+                addLog(`Could not fetch existing records: ${error.message}`, 'warning');
+                return { titles: new Set(), urls: new Set() };
+            }
+        }
+
+        function isDuplicate(paper, existingData) {
+            const titleMatch = existingData.titles.has(paper.title.toLowerCase().trim());
+            const urlMatch = paper.url && existingData.urls.has(paper.url.toLowerCase().trim());
+            return titleMatch || urlMatch;
+        }
+
+        async function getOrCreateCandidate(authorName, apiKey, baseId) {
+            authorName = authorName.trim();
+            if (!authorName || authorName === 'Unknown') return null;
+            
+            const nameField = fieldMapping.candidateName;
+            if (!nameField) {
+                addLog(`    → No candidate name field mapped`, 'error');
+                return null;
+            }
+            
+            try {
+                addLog(`    → Searching Candidates table for: ${authorName}`, 'info');
+                const searchUrl = `https://api.airtable.com/v0/${baseId}/Candidates?filterByFormula=${encodeURIComponent(`{${nameField}} = "${authorName}"`)}`;
+                const searchResponse = await fetch(searchUrl, {
+                    headers: { 'Authorization': 'Bearer ' + apiKey }
+                });
+
+                addLog(`    → Search response status: ${searchResponse.status}`, 'info');
+
+                if (searchResponse.ok) {
+                    const searchData = await searchResponse.json();
+                    addLog(`    → Found ${searchData.records.length} existing records`, 'info');
+                    if (searchData.records.length > 0) {
+                        addLog(`    → Using existing candidate ID: ${searchData.records[0].id}`, 'success');
+                        return searchData.records[0].id;
+                    }
+                } else {
+                    const errorText = await searchResponse.text();
+                    addLog(`    → Search failed: ${errorText}`, 'error');
+                }
+
+                addLog(`    → Creating new candidate record for: ${authorName}`, 'info');
+                const createResponse = await fetch(`https://api.airtable.com/v0/${baseId}/Candidates`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ fields: { [nameField]: authorName } })
+                });
+
+                addLog(`    → Create response status: ${createResponse.status}`, 'info');
+
+                if (createResponse.ok) {
+                    const createData = await createResponse.json();
+                    addLog(`    → Created candidate with ID: ${createData.id}`, 'success');
+                    return createData.id;
+                } else {
+                    const errorData = await createResponse.json();
+                    addLog(`    → Create failed: ${JSON.stringify(errorData)}`, 'error');
+                }
+            } catch (error) {
+                addLog(`    → Exception: ${error.message}`, 'error');
+                console.error('Full error:', error);
+            }
+            return null;
+        }
+
+        async function getOrCreateExpertiseArea(areaName, apiKey, baseId) {
+            const nameField = fieldMapping.expertiseName;
+            if (!nameField) {
+                addLog(`    → No expertise name field mapped`, 'error');
+                return null;
+            }
+            
+            try {
+                addLog(`    → Searching Expertise Areas for: ${areaName}`, 'info');
+                const searchUrl = `https://api.airtable.com/v0/${baseId}/Expertise%20Areas?filterByFormula=${encodeURIComponent(`{${nameField}} = "${areaName}"`)}`;
+                const searchResponse = await fetch(searchUrl, {
+                    headers: { 'Authorization': 'Bearer ' + apiKey }
+                });
+
+                addLog(`    → Search response status: ${searchResponse.status}`, 'info');
+
+                if (searchResponse.ok) {
+                    const searchData = await searchResponse.json();
+                    addLog(`    → Found ${searchData.records.length} existing records`, 'info');
+                    if (searchData.records.length > 0) {
+                        addLog(`    → Using existing expertise ID: ${searchData.records[0].id}`, 'success');
+                        return searchData.records[0].id;
+                    }
+                } else {
+                    const errorText = await searchResponse.text();
+                    addLog(`    → Search failed: ${errorText}`, 'error');
+                }
+
+                addLog(`    → Creating new expertise record for: ${areaName}`, 'info');
+                const createResponse = await fetch(`https://api.airtable.com/v0/${baseId}/Expertise%20Areas`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ fields: { [nameField]: areaName } })
+                });
+
+                addLog(`    → Create response status: ${createResponse.status}`, 'info');
+
+                if (createResponse.ok) {
+                    const createData = await createResponse.json();
+                    addLog(`    → Created expertise with ID: ${createData.id}`, 'success');
+                    return createData.id;
+                } else {
+                    const errorData = await createResponse.json();
+                    addLog(`    → Create failed: ${JSON.stringify(errorData)}`, 'error');
+                }
+            } catch (error) {
+                addLog(`    → Exception: ${error.message}`, 'error');
+                console.error('Full error:', error);
+            }
+            return null;
+        }
+
+        function detectExpertiseAreas(paper) {
+            const text = `${paper.title} ${paper.abstract}`.toLowerCase();
+            const detected = [];
+            for (const [area, keywords] of Object.entries(expertiseKeywords)) {
+                if (keywords.some(k => text.includes(k.toLowerCase()))) {
+                    detected.push(area);
+                }
+            }
+            return detected.slice(0, 3);
+        }
+
+        async function addToAirtable(records, existingData) {
+            const apiKey = document.getElementById('airtableKey').value.trim();
+            const baseId = document.getElementById('airtableBase').value.trim();
+            const tableName = document.getElementById('airtableTable').value.trim();
+
+            let success = 0, failed = 0, skipped = 0;
+
+            for (const record of records) {
+                try {
+                    if (isDuplicate(record, existingData)) {
+                        skipped++;
+                        addLog(`⊘ Skipped duplicate: ${record.title.substring(0, 50)}`, 'warning');
+                        continue;
+                    }
+
+                    const fields = {};
+                    if (fieldMapping.title) fields[fieldMapping.title] = record.title;
+                    if (fieldMapping.abstract) fields[fieldMapping.abstract] = record.abstract;
+                    if (fieldMapping.authors) fields[fieldMapping.authors] = record.authors;
+                    if (fieldMapping.date) fields[fieldMapping.date] = record.date;
+                    if (fieldMapping.url) fields[fieldMapping.url] = record.url;
+                    if (fieldMapping.source) fields[fieldMapping.source] = record.source;
+                    if (fieldMapping.conference) fields[fieldMapping.conference] = record.conference;
+                    if (fieldMapping.addedDate) fields[fieldMapping.addedDate] = new Date().toISOString().split('T')[0];
+
+                    addLog(`Processing: ${record.title.substring(0, 60)}`, 'info');
+                    addLog(`  → Authors string: "${record.authors}"`, 'info');
+                    addLog(`  → Conference: "${record.conference}"`, 'info');
+
+                    // Authors
+                    if (fieldMapping.leadAuthor || fieldMapping.coAuthors) {
+                        addLog(`  → Author fields mapped: Lead=${fieldMapping.leadAuthor}, Co=${fieldMapping.coAuthors}`, 'info');
+                        const authorNames = record.authors.split(',').map(a => a.trim()).filter(a => a && a !== 'Unknown');
+                        addLog(`  → Parsed ${authorNames.length} author names: ${authorNames.join(', ')}`, 'info');
+                        
+                        if (authorNames.length > 0) {
+                            if (fieldMapping.leadAuthor && authorNames[0]) {
+                                addLog(`  → Creating/finding lead author: ${authorNames[0]}`, 'info');
+                                const leadId = await getOrCreateCandidate(authorNames[0], apiKey, baseId);
+                                if (leadId) {
+                                    fields[fieldMapping.leadAuthor] = [leadId];
+                                    addLog(`  → ✓ Linked lead author with ID: ${leadId}`, 'success');
+                                } else {
+                                    addLog(`  → ✗ Failed to get lead author ID`, 'error');
+                                }
+                            }
+                            if (fieldMapping.coAuthors && authorNames.length > 1) {
+                                addLog(`  → Processing ${authorNames.length - 1} co-authors`, 'info');
+                                const coIds = [];
+                                for (let i = 1; i < Math.min(authorNames.length, 10); i++) {
+                                    addLog(`  → Creating/finding co-author: ${authorNames[i]}`, 'info');
+                                    const coId = await getOrCreateCandidate(authorNames[i], apiKey, baseId);
+                                    if (coId) {
+                                        coIds.push(coId);
+                                        addLog(`  → ✓ Got co-author ID: ${coId}`, 'success');
+                                    }
+                                    await new Promise(r => setTimeout(r, 200));
+                                }
+                                if (coIds.length > 0) {
+                                    fields[fieldMapping.coAuthors] = coIds;
+                                    addLog(`  → ✓ Linked ${coIds.length} co-authors`, 'success');
+                                } else {
+                                    addLog(`  → ✗ No co-author IDs obtained`, 'error');
+                                }
+                            }
+                        } else {
+                            addLog(`  → No valid authors found to process`, 'warning');
+                        }
+                    } else {
+                        addLog(`  → Skipping authors: fields not mapped`, 'warning');
+                    }
+
+                    // Expertise
+                    if (fieldMapping.expertiseAreas) {
+                        addLog(`  → Expertise field mapped: ${fieldMapping.expertiseAreas}`, 'info');
+                        const areas = detectExpertiseAreas(record);
+                        addLog(`  → Detected ${areas.length} expertise areas: ${areas.join(', ')}`, 'info');
+                        if (areas.length > 0) {
+                            const areaIds = [];
+                            for (const area of areas) {
+                                addLog(`  → Creating/finding expertise: ${area}`, 'info');
+                                const areaId = await getOrCreateExpertiseArea(area, apiKey, baseId);
+                                if (areaId) {
+                                    areaIds.push(areaId);
+                                    addLog(`  → ✓ Got expertise ID: ${areaId}`, 'success');
+                                }
+                                await new Promise(r => setTimeout(r, 200));
+                            }
+                            if (areaIds.length > 0) {
+                                fields[fieldMapping.expertiseAreas] = areaIds;
+                                addLog(`  → ✓ Linked ${areaIds.length} expertise areas`, 'success');
+                            } else {
+                                addLog(`  → ✗ No expertise IDs obtained`, 'error');
+                            }
+                        } else {
+                            addLog(`  → No expertise areas detected`, 'warning');
+                        }
+                    } else {
+                        addLog(`  → Skipping expertise: field not mapped`, 'warning');
+                    }
+
+                    addLog(`  → Final fields object: ${JSON.stringify(Object.keys(fields))}`, 'info');
+
+                    const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + apiKey,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ fields })
+                    });
+
+                    if (response.ok) {
+                        success++;
+                        addLog(`✓ Added successfully`, 'success');
+                    } else {
+                        failed++;
+                        const error = await response.json();
+                        addLog(`✗ Failed: ${error.error?.message}`, 'error');
+                    }
+                    
+                    await new Promise(r => setTimeout(r, 500));
+                } catch (error) {
+                    failed++;
+                    addLog(`✗ Error: ${error.message}`, 'error');
+                }
+            }
+
+            return { success, failed, skipped };
+        }
+
+        function displayResults(papers) {
+            const section = document.getElementById('resultsSection');
+            const title = document.getElementById('resultsTitle');
+            const list = document.getElementById('resultsList');
+            
+            section.classList.remove('hidden');
+            title.textContent = `Found ${papers.length} Papers`;
+            
+            list.innerHTML = papers.map(paper => `
+                <div class="bg-slate-50 rounded-lg p-4 border">
+                    <h4 class="font-semibold text-blue-900 mb-1">${paper.title}</h4>
+                    <p class="text-sm text-gray-600 mb-2">${paper.abstract.substring(0, 200)}...</p>
+                    <div class="flex gap-3 text-xs text-gray-500">
+                        <span>👤 ${paper.authors.substring(0, 50)}</span>
+                        <span>📅 ${paper.date || 'N/A'}</span>
+                        <span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded">${paper.source}</span>
+                        <span>🎓 ${paper.conference}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
