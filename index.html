@@ -1,0 +1,933 @@
+            await addAuthorsToCandidates(Object.values(network.authors).map(function(a) {
+                return { name: a.name, paperCount: a.papers.length, papers: a.papers, topics: [] };
+            }));
+        }
+
+        function sleep(ms) {
+            return new Promise(function(resolve) { setTimeout(resolve, ms); });
+        }
+
+        function extractSearchTerms(prompt) {
+            const terms = [];
+            
+            const arxivIds = prompt.match(/arxiv\.org\/abs\/(\d+\.\d+)/gi);
+            if (arxivIds) {
+                arxivIds.forEach(function(id) {
+                    const cleanId = id.replace(/arxiv\.org\/abs\//i, '');
+                    terms.push('arxiv:' + cleanId);
+                });
+            }
+            
+            const quotedMatches = prompt.match(/"([^"]+)"/g);
+            if (quotedMatches) {
+                quotedMatches.forEach(function(q) { terms.push(q.replace(/"/g, '')); });
+            }
+            
+            const keyPhrases = prompt.match(/\b(hybrid architecture|long[- ]context reasoning|state space model|sequential model|attention mechanism|transformer architecture)\b/gi);
+            if (keyPhrases) {
+                keyPhrases.forEach(function(p) { terms.push(p.toLowerCase()); });
+            }
+            
+            const techTerms = prompt.match(/\b(SSM|S4|mamba|transformer|attention|architecture|LSTM|RNN|GRU|recurrent|sequential)\b/gi);
+            if (techTerms) {
+                techTerms.forEach(function(t) { terms.push(t.toLowerCase()); });
+            }
+            
+            if (arxivIds && arxivIds.length > 0 && terms.length === arxivIds.length) {
+                terms.push('state space model');
+                terms.push('sequential model');
+            }
+            
+            if (terms.length === 0) {
+                return [prompt];
+            }
+            
+            return Array.from(new Set(terms));
+        }
+
+        async function searchArxiv(query, maxResults) {
+            try {
+                if (query.startsWith('arxiv:')) {
+                    const arxivId = query.replace('arxiv:', '');
+                    const response = await fetch('https://export.arxiv.org/api/query?id_list=' + arxivId);
+                    const text = await response.text();
+                    const parser = new DOMParser();
+                    const xml = parser.parseFromString(text, 'text/xml');
+                    const entry = xml.querySelector('entry');
+                    
+                    if (entry) {
+                        const title = entry.querySelector('title') ? entry.querySelector('title').textContent.trim() : null;
+                        const summary = entry.querySelector('summary') ? entry.querySelector('summary').textContent.trim() : null;
+                        const published = entry.querySelector('published') ? entry.querySelector('published').textContent : null;
+                        const link = entry.querySelector('id') ? entry.querySelector('id').textContent : null;
+                        const authors = Array.from(entry.querySelectorAll('author name')).map(function(a) { return a.textContent; });
+                        
+                        if (title && summary) {
+                            return [{
+                                title: title, abstract: summary,
+                                authors: authors.join(', '),
+                                date: published ? published.split('T')[0] : '',
+                                url: link, source: 'arXiv',
+                                conference: 'Preprint (arXiv)'
+                            }];
+                        }
+                    }
+                    return [];
+                }
+                
+                let searchQuery;
+                if (query.startsWith('au:')) {
+                    searchQuery = 'au:' + encodeURIComponent(query.replace('au:', ''));
+                } else {
+                    searchQuery = 'all:' + encodeURIComponent(query);
+                }
+                
+                const response = await fetch('https://export.arxiv.org/api/query?search_query=' + searchQuery + '&start=0&max_results=' + maxResults + '&sortBy=submittedDate&sortOrder=descending');
+                const text = await response.text();
+                const parser = new DOMParser();
+                const xml = parser.parseFromString(text, 'text/xml');
+                const entries = xml.querySelectorAll('entry');
+                
+                const papers = [];
+                entries.forEach(function(entry) {
+                    const title = entry.querySelector('title') ? entry.querySelector('title').textContent.trim() : null;
+                    const summary = entry.querySelector('summary') ? entry.querySelector('summary').textContent.trim() : null;
+                    const published = entry.querySelector('published') ? entry.querySelector('published').textContent : null;
+                    const link = entry.querySelector('id') ? entry.querySelector('id').textContent : null;
+                    const authors = Array.from(entry.querySelectorAll('author name')).map(function(a) { return a.textContent; });
+                    
+                    if (title && summary) {
+                        papers.push({
+                            title: title, abstract: summary,
+                            authors: authors.join(', '),
+                            date: published ? published.split('T')[0] : '',
+                            url: link, source: 'arXiv',
+                            conference: 'Preprint (arXiv)'
+                        });
+                    }
+                });
+                return papers;
+            } catch (error) {
+                addLog('ArXiv error: ' + error.message, 'error');
+                return [];
+            }
+        }
+
+        function displayPapers(papers) {
+            const section = document.getElementById('resultsSection');
+            const list = document.getElementById('resultsList');
+            section.classList.remove('hidden');
+            document.getElementById('resultsTitle').innerHTML = '<span class="gradient-text">📄 Found ' + papers.length + ' Papers</span>';
+            
+            list.innerHTML = papers.map(function(p) {
+                return '<div class="result-card bg-white rounded-xl p-5 border-2 border-blue-100 mb-4 shadow-sm">' +
+                    '<h4 class="font-bold text-lg text-blue-900 mb-2">' + p.title + '</h4>' +
+                    '<p class="text-sm text-gray-600 mb-3 leading-relaxed">' + p.abstract.substring(0, 250) + '...</p>' +
+                    '<div class="flex flex-wrap gap-3 text-xs">' +
+                    '<span class="px-3 py-1 bg-blue-50 text-blue-700 rounded-full">👥 ' + p.authors.substring(0, 50) + '...</span>' +
+                    '<span class="px-3 py-1 bg-green-50 text-green-700 rounded-full">📅 ' + p.date + '</span>' +
+                    '<span class="px-3 py-1 bg-purple-50 text-purple-700 rounded-full">' + p.source + '</span>' +
+                    '</div></div>';
+            }).join('');
+        }
+
+        function displayAuthors(authors) {
+            const section = document.getElementById('resultsSection');
+            const list = document.getElementById('resultsList');
+            section.classList.remove('hidden');
+            document.getElementById('resultsTitle').innerHTML = '<span class="gradient-text">👥 Found ' + authors.length + ' Authors</span>';
+            
+            list.innerHTML = authors.map(function(a) {
+                return '<div class="result-card bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-5 border-2 border-purple-100 mb-4 shadow-sm">' +
+                    '<h4 class="font-bold text-lg text-purple-900 mb-3">' + a.name + '</h4>' +
+                    '<div class="flex flex-wrap gap-3 text-sm mb-3">' +
+                    '<span class="px-3 py-1 bg-white/70 rounded-full">📝 ' + a.paperCount + ' papers</span>' +
+                    '<span class="px-3 py-1 bg-white/70 rounded-full">⭐ Score: ' + a.score + '</span>' +
+                    '</div>' +
+                    '<div class="text-xs text-purple-700">🎯 ' + a.topics.join(', ') + '</div>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function displayCombinedResults(papers, authors) {
+            const section = document.getElementById('resultsSection');
+            const list = document.getElementById('resultsList');
+            section.classList.remove('hidden');
+            document.getElementById('resultsTitle').innerHTML = '<span class="gradient-text">🎯 Found ' + papers.length + ' Papers & ' + authors.length + ' Authors</span>';
+            
+            let html = '<div class="mb-8"><h4 class="font-bold text-xl mb-4 text-blue-900">📄 Papers (' + papers.length + ')</h4>' +
+                '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+            html += papers.slice(0, 20).map(function(p) {
+                return '<div class="result-card bg-white rounded-lg p-4 border border-blue-100 shadow-sm">' +
+                    '<div class="font-semibold text-blue-900 mb-2 text-sm">' + p.title + '</div>' +
+                    '<div class="text-xs text-gray-600">' + p.authors.substring(0, 60) + '... • ' + p.date + '</div>' +
+                    '</div>';
+            }).join('');
+            html += '</div></div>';
+            
+            html += '<div><h4 class="font-bold text-xl mb-4 text-purple-900">👥 Authors (' + authors.length + ')</h4>' +
+                '<div class="grid grid-cols-1 md:grid-cols-3 gap-4">';
+            html += authors.slice(0, 30).map(function(a) {
+                return '<div class="result-card bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-4 border border-purple-100 shadow-sm">' +
+                    '<div class="font-semibold text-purple-900 mb-1">' + a.name + '</div>' +
+                    '<div class="text-xs text-purple-700">' + a.paperCount + ' papers</div>' +
+                    '</div>';
+            }).join('');
+            html += '</div></div>';
+            
+            list.innerHTML = html;
+        }
+
+        function displayNetwork(network) {
+            const section = document.getElementById('resultsSection');
+            const list = document.getElementById('resultsList');
+            section.classList.remove('hidden');
+            document.getElementById('resultsTitle').innerHTML = '<span class="gradient-text">🕸️ Network: ' + Object.keys(network.authors).length + ' researchers</span>';
+            
+            const levels = {};
+            Object.values(network.authors).forEach(function(a) {
+                if (!levels[a.level]) levels[a.level] = [];
+                levels[a.level].push(a);
+            });
+            
+            let html = '';
+            Object.keys(levels).sort().forEach(function(level) {
+                const colors = ['from-blue-50 to-indigo-50 border-blue-200', 'from-purple-50 to-pink-50 border-purple-200', 'from-green-50 to-teal-50 border-green-200'];
+                html += '<div class="mb-6"><h4 class="font-bold text-lg mb-3">Level ' + level + ' <span class="text-sm text-gray-600">(' + levels[level].length + ' authors)</span></h4>' +
+                    '<div class="grid grid-cols-1 md:grid-cols-3 gap-3">';
+                html += levels[level].map(function(a) {
+                    return '<div class="result-card bg-gradient-to-br ' + colors[parseInt(level) % 3] + ' rounded-lg p-4 border-2 shadow-sm">' +
+                        '<div class="font-semibold text-gray-900 mb-1">' + a.name + '</div>' +
+                        '<div class="text-xs text-gray-600">' + a.papers.length + ' papers' +
+                        (a.collabCount ? ' • ' + a.collabCount + ' collabs' : '') +
+                        '</div></div>';
+                }).join('');
+                html += '</div></div>';
+            });
+            
+            list.innerHTML = html;
+        }
+
+        async function addPapersToAirtable(papers) {
+            addLog('Adding ' + papers.length + ' papers to Airtable...', 'info');
+            
+            const existing = await fetchExistingPapers();
+            let added = 0, skipped = 0;
+            
+            for (let i = 0; i < papers.length; i++) {
+                const p = papers[i];
+                
+                if (existing.titles.has(p.title.toLowerCase())) {
+                    skipped++;
+                    continue;
+                }
+                
+                try {
+                    const fields = {};
+                    if (fieldMapping.papers.title) fields[fieldMapping.papers.title] = p.title;
+                    if (fieldMapping.papers.abstract) fields[fieldMapping.papers.abstract] = p.abstract;
+                    if (fieldMapping.papers.authors) fields[fieldMapping.papers.authors] = p.authors;
+                    if (fieldMapping.papers.date) fields[fieldMapping.papers.date] = p.date;
+                    if (fieldMapping.papers.url) fields[fieldMapping.papers.url] = p.url;
+                    if (fieldMapping.papers.source) fields[fieldMapping.papers.source] = p.source;
+                    
+                    const response = await fetch('https://api.airtable.com/v0/' + config.baseId + '/' + encodeURIComponent(config.publicationsTable), {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + config.apiKey,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ fields: fields })
+                    });
+                    
+                    if (response.ok) added++;
+                    await sleep(300);
+                } catch (error) {
+                    addLog('Paper add error: ' + error.message, 'error');
+                }
+            }
+            
+            addLog('✓ Added ' + added + ' papers, skipped ' + skipped + ' duplicates', 'success');
+        }
+
+        async function addAuthorsToCandidates(authors) {
+            addLog('Adding ' + authors.length + ' authors to Candidates...', 'info');
+            
+            const existing = await fetchExistingCandidates();
+            let added = 0, skipped = 0;
+            
+            for (let i = 0; i < authors.length; i++) {
+                const a = authors[i];
+                
+                if (existing.has(a.name.toLowerCase())) {
+                    skipped++;
+                    continue;
+                }
+                
+                try {
+                    const fields = {};
+                    if (fieldMapping.candidates.name) fields[fieldMapping.candidates.name] = a.name;
+                    
+                    const response = await fetch('https://api.airtable.com/v0/' + config.baseId + '/' + encodeURIComponent(config.candidatesTable), {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + config.apiKey,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ fields: fields })
+                    });
+                    
+                    if (response.ok) added++;
+                    await sleep(300);
+                } catch (error) {
+                    addLog('Author add error: ' + error.message, 'error');
+                }
+            }
+            
+            addLog('✓ Added ' + added + ' candidates, skipped ' + skipped + ' duplicates', 'success');
+        }
+
+        async function fetchExistingPapers() {
+            try {
+                const response = await fetch('https://api.airtable.com/v0/' + config.baseId + '/' + encodeURIComponent(config.publicationsTable), {
+                    headers: { 'Authorization': 'Bearer ' + config.apiKey }
+                });
+                
+                if (!response.ok) return { titles: new Set(), urls: new Set() };
+                const data = await response.json();
+                
+                const existing = { titles: new Set(), urls: new Set() };
+                data.records.forEach(function(r) {
+                    if (r.fields[fieldMapping.papers.title]) {
+                        existing.titles.add(r.fields[fieldMapping.papers.title].toLowerCase().trim());
+                    }
+                });
+                
+                return existing;
+            } catch (error) {
+                return { titles: new Set(), urls: new Set() };
+            }
+        }
+
+        async function fetchExistingCandidates() {
+            try {
+                const response = await fetch('https://api.airtable.com/v0/' + config.baseId + '/' + encodeURIComponent(config.candidatesTable), {
+                    headers: { 'Authorization': 'Bearer ' + config.apiKey }
+                });
+                
+                if (!response.ok) return new Set();
+                const data = await response.json();
+                
+                const existing = new Set();
+                data.records.forEach(function(r) {
+                    if (r.fields[fieldMapping.candidates.name]) {
+                        existing.add(r.fields[fieldMapping.candidates.name].toLowerCase().trim());
+                    }
+                });
+                
+                return existing;
+            } catch (error) {
+                return new Set();
+            }
+        }<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research & Talent Discovery Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tab-active {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            color: white;
+            border-bottom: 3px solid #6366f1;
+        }
+        .result-card {
+            transition: all 0.2s;
+        }
+        .result-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 min-h-screen p-6">
+    <div class="max-w-7xl mx-auto">
+        <div class="bg-white rounded-xl shadow-2xl overflow-hidden">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                        </svg>
+                        <div>
+                            <h1 class="text-3xl font-bold">Research & Talent Discovery</h1>
+                            <p class="text-blue-100 text-sm">Find papers, authors, and build your research network</p>
+                        </div>
+                    </div>
+                    <button onclick="toggleConfig()" class="p-2 bg-blue-500 hover:bg-blue-400 rounded-lg">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Configuration Panel -->
+            <div id="configPanel" class="border-b bg-slate-50 p-6">
+                <h2 class="text-xl font-semibold mb-4">⚙️ Configuration</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Airtable API Key</label>
+                        <input type="password" id="airtableKey" placeholder="patXXXXXXXXXXXXXX" class="w-full px-3 py-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Airtable Base ID</label>
+                        <input type="text" id="airtableBase" placeholder="appXXXXXXXXXXXXXX" class="w-full px-3 py-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Publications Table Name</label>
+                        <input type="text" id="publicationsTable" value="Conference Publications" class="w-full px-3 py-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Candidates Table Name</label>
+                        <input type="text" id="candidatesTable" value="Candidates" class="w-full px-3 py-2 border rounded-lg">
+                    </div>
+                    <div>
+                        <button onclick="initialize()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg mt-6">
+                            Connect & Initialize
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search Mode Selector -->
+            <div id="searchModes" class="hidden bg-gradient-to-r from-slate-50 to-blue-50">
+                <div class="flex">
+                    <button onclick="switchMode('papers')" id="papersTab" class="tab-active flex-1 px-6 py-4 font-semibold transition-all">
+                        📄 Find Papers
+                    </button>
+                    <button onclick="switchMode('authors')" id="authorsTab" class="flex-1 px-6 py-4 font-semibold text-gray-600 hover:bg-white/50 transition-all">
+                        👥 Find Authors
+                    </button>
+                    <button onclick="switchMode('similar')" id="similarTab" class="flex-1 px-6 py-4 font-semibold text-gray-600 hover:bg-white/50 transition-all">
+                        🎯 Find Similar
+                    </button>
+                    <button onclick="switchMode('network')" id="networkTab" class="flex-1 px-6 py-4 font-semibold text-gray-600 hover:bg-white/50 transition-all">
+                        🕸️ Network
+                    </button>
+                </div>
+
+                <!-- Papers Mode -->
+                <div id="papersMode" class="p-6">
+                    <h3 class="text-lg font-semibold mb-3">Search for Research Papers</h3>
+                    <p class="text-sm text-gray-600 mb-4">Enter search terms, arxiv IDs, or describe what papers you want</p>
+                    <textarea id="paperSearch" rows="3" class="w-full px-3 py-2 border rounded-lg mb-4" placeholder="e.g., Find papers on Mamba or https://arxiv.org/abs/2409.12640"></textarea>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Max Results</label>
+                            <input type="number" id="paperMaxResults" value="20" min="5" max="100" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Year Filter (optional)</label>
+                            <input type="number" id="paperYear" placeholder="2024" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+                    </div>
+                    <button onclick="searchPapers()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg">
+                        🔍 Search Papers
+                    </button>
+                </div>
+
+                <!-- Authors Mode -->
+                <div id="authorsMode" class="p-6 hidden">
+                    <h3 class="text-lg font-semibold mb-3">Search for Researchers</h3>
+                    <p class="text-sm text-gray-600 mb-4">Find authors by expertise, research area, or similar to existing authors</p>
+                    <textarea id="authorSearch" rows="3" class="w-full px-3 py-2 border rounded-lg mb-4" placeholder="e.g., Find researchers working on state space models, or similar to Albert Gu"></textarea>
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Min Papers</label>
+                            <input type="number" id="authorMinPapers" value="3" min="1" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Max Authors</label>
+                            <input type="number" id="authorMaxResults" value="20" min="5" max="50" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+                    </div>
+                    <button onclick="searchAuthors()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg">
+                        👥 Search Authors
+                    </button>
+                </div>
+
+                <!-- Similar Mode -->
+                <div id="similarMode" class="p-6 hidden">
+                    <h3 class="text-lg font-semibold mb-3">Find Similar to High-Ranked Papers</h3>
+                    <p class="text-sm text-gray-600 mb-4">Analyzes papers marked P0/P1 in "Karan's Notes" and finds similar work</p>
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                        <p class="text-sm"><strong>Strategy:</strong></p>
+                        <ul class="text-sm text-gray-700 mt-2 space-y-1">
+                            <li>• Searches by prolific authors from P0/P1 papers</li>
+                            <li>• Extracts specific methods and techniques</li>
+                            <li>• Finds papers with author/topic overlap</li>
+                            <li>• Scores and ranks by relevance</li>
+                        </ul>
+                    </div>
+                    <button onclick="findSimilarToHighRanked()" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg">
+                        🎯 Find Similar Papers & Authors
+                    </button>
+                </div>
+
+                <!-- Network Mode -->
+                <div id="networkMode" class="p-6 hidden">
+                    <h3 class="text-lg font-semibold mb-3">Discover Author Networks</h3>
+                    <p class="text-sm text-gray-600 mb-4">Enter an author name to find their collaborators and similar researchers</p>
+                    <input type="text" id="networkAuthor" placeholder="e.g., Albert Gu" class="w-full px-3 py-2 border rounded-lg mb-4">
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Network Depth</label>
+                            <select id="networkDepth" class="w-full px-3 py-2 border rounded-lg">
+                                <option value="1">Direct collaborators</option>
+                                <option value="2" selected>2nd degree network</option>
+                                <option value="3">3rd degree network</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Min Collaborations</label>
+                            <input type="number" id="networkMinCollabs" value="2" min="1" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+                    </div>
+                    <button onclick="discoverNetwork()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg">
+                        🕸️ Map Author Network
+                    </button>
+                </div>
+            </div>
+
+            <!-- Logs -->
+            <div id="logsSection" class="p-6 bg-slate-50 border-b hidden">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-semibold">Activity Log</h3>
+                    <button onclick="document.getElementById('logsList').innerHTML=''" class="text-sm text-gray-500 hover:text-gray-700">Clear</button>
+                </div>
+                <div id="logsList" class="bg-white rounded-lg border max-h-96 overflow-y-auto"></div>
+            </div>
+
+            <!-- Results -->
+            <div id="resultsSection" class="p-6 hidden">
+                <h3 id="resultsTitle" class="text-xl font-semibold mb-4">Results</h3>
+                <div id="resultsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let config = {
+            apiKey: '',
+            baseId: '',
+            publicationsTable: 'Conference Publications',
+            candidatesTable: 'Candidates'
+        };
+        
+        let fieldMapping = {
+            papers: { title: '', abstract: '', authors: '', date: '', url: '', source: '', conference: '', leadAuthor: '', coAuthors: '', expertiseAreas: '' },
+            candidates: { name: '', email: '', scholar: '', linkedin: '', affiliation: '', company: '', expertise: '' }
+        };
+
+        let currentMode = 'papers';
+
+        function toggleConfig() {
+            document.getElementById('configPanel').classList.toggle('hidden');
+        }
+
+        function addLog(msg, type = 'info') {
+            const section = document.getElementById('logsSection');
+            const list = document.getElementById('logsList');
+            section.classList.remove('hidden');
+            
+            const colors = { error: 'text-red-600', success: 'text-green-600', warning: 'text-yellow-600', info: 'text-gray-700' };
+            const div = document.createElement('div');
+            div.className = 'px-4 py-2 border-b text-sm';
+            div.innerHTML = '<span class="text-gray-400 text-xs">' + new Date().toLocaleTimeString() + '</span> <span class="' + colors[type] + '">' + msg + '</span>';
+            list.appendChild(div);
+            list.scrollTop = list.scrollHeight;
+        }
+
+        async function initialize() {
+            config.apiKey = document.getElementById('airtableKey').value.trim();
+            config.baseId = document.getElementById('airtableBase').value.trim();
+            config.publicationsTable = document.getElementById('publicationsTable').value.trim();
+            config.candidatesTable = document.getElementById('candidatesTable').value.trim();
+
+            if (!config.apiKey || !config.baseId) {
+                alert('Please enter API key and Base ID');
+                return;
+            }
+
+            try {
+                addLog('Connecting to Airtable...', 'info');
+                
+                const response = await fetch('https://api.airtable.com/v0/meta/bases/' + config.baseId + '/tables', {
+                    headers: { 'Authorization': 'Bearer ' + config.apiKey }
+                });
+
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                
+                // Map publications table fields
+                const pubTable = data.tables.find(function(t) { return t.name === config.publicationsTable; });
+                if (pubTable) {
+                    fieldMapping.papers.title = (pubTable.fields.find(function(f) { return f.name.toLowerCase().includes('title'); }) || {}).name || '';
+                    fieldMapping.papers.abstract = (pubTable.fields.find(function(f) { return f.name.toLowerCase().includes('abstract'); }) || {}).name || '';
+                    fieldMapping.papers.authors = (pubTable.fields.find(function(f) { return f.name.toLowerCase().includes('author') && f.type !== 'multipleRecordLinks'; }) || {}).name || '';
+                    addLog('✓ Connected to Publications table', 'success');
+                }
+
+                // Map candidates table fields
+                const candTable = data.tables.find(function(t) { return t.name === config.candidatesTable; });
+                if (candTable) {
+                    fieldMapping.candidates.name = (candTable.fields.find(function(f) { return f.name.toLowerCase().includes('name'); }) || candTable.fields[0]).name;
+                    fieldMapping.candidates.email = (candTable.fields.find(function(f) { return f.name.toLowerCase().includes('email'); }) || {}).name || '';
+                    addLog('✓ Connected to Candidates table', 'success');
+                }
+
+                document.getElementById('searchModes').classList.remove('hidden');
+                addLog('✓ Ready to search!', 'success');
+            } catch (error) {
+                addLog('Error: ' + error.message, 'error');
+            }
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // Update tabs
+            ['papers', 'authors', 'similar', 'network'].forEach(function(m) {
+                const tab = document.getElementById(m + 'Tab');
+                const content = document.getElementById(m + 'Mode');
+                if (m === mode) {
+                    tab.className = 'flex-1 px-6 py-4 font-semibold border-b-2 border-blue-600 text-blue-600';
+                    if (content) content.classList.remove('hidden');
+                } else {
+                    tab.className = 'flex-1 px-6 py-4 font-semibold text-gray-500 hover:text-gray-700';
+                    if (content) content.classList.add('hidden');
+                }
+            });
+        }
+
+        async function searchPapers() {
+            const query = document.getElementById('paperSearch').value.trim();
+            if (!query) {
+                alert('Please enter search terms');
+                return;
+            }
+
+            document.getElementById('logsList').innerHTML = '';
+            addLog('🔍 Searching for papers...', 'info');
+            
+            const maxResults = parseInt(document.getElementById('paperMaxResults').value) || 20;
+            const yearFilter = document.getElementById('paperYear').value;
+            
+            const searchTerms = extractSearchTerms(query);
+            addLog('Extracted ' + searchTerms.length + ' search terms: ' + searchTerms.join(', '), 'info');
+            
+            const allPapers = [];
+            
+            for (let i = 0; i < searchTerms.length; i++) {
+                addLog('Searching: "' + searchTerms[i] + '"', 'info');
+                const arxivResults = await searchArxiv(searchTerms[i], maxResults);
+                allPapers.push.apply(allPapers, arxivResults);
+                await sleep(1500);
+            }
+            
+            let uniquePapers = Array.from(new Map(allPapers.map(function(p) { return [p.title.toLowerCase(), p]; })).values());
+            
+            if (yearFilter) {
+                const before = uniquePapers.length;
+                uniquePapers = uniquePapers.filter(function(p) {
+                    return p.date && p.date.startsWith(yearFilter);
+                });
+                addLog('Filtered to year ' + yearFilter + ': ' + before + ' → ' + uniquePapers.length + ' papers', 'info');
+            }
+            
+            addLog('✓ Found ' + uniquePapers.length + ' unique papers', 'success');
+            displayPapers(uniquePapers);
+            
+            if (uniquePapers.length > 0) {
+                await addPapersToAirtable(uniquePapers);
+            }
+        }
+
+        async function searchAuthors() {
+            const query = document.getElementById('authorSearch').value.trim();
+            if (!query) {
+                alert('Please describe what authors you\'re looking for');
+                return;
+            }
+
+            document.getElementById('logsList').innerHTML = '';
+            addLog('👥 Searching for authors...', 'info');
+            
+            const minPapers = parseInt(document.getElementById('authorMinPapers').value) || 3;
+            const maxAuthors = parseInt(document.getElementById('authorMaxResults').value) || 20;
+            
+            // Extract topics/keywords
+            const topics = extractSearchTerms(query);
+            addLog('Searching for authors in: ' + topics.join(', '), 'info');
+            
+            const authorMap = {};
+            
+            // Search papers and collect authors
+            for (let i = 0; i < Math.min(topics.length, 5); i++) {
+                addLog('Phase ' + (i+1) + ': Searching papers on "' + topics[i] + '"', 'info');
+                const papers = await searchArxiv(topics[i], 30);
+                
+                papers.forEach(function(paper) {
+                    const authors = paper.authors.split(',').map(function(a) { return a.trim(); }).filter(function(a) { return a && a !== 'Unknown'; });
+                    
+                    authors.forEach(function(author) {
+                        if (!authorMap[author]) {
+                            authorMap[author] = { name: author, papers: [], topics: new Set() };
+                        }
+                        authorMap[author].papers.push(paper);
+                        topics.forEach(function(t) {
+                            if ((paper.title + ' ' + paper.abstract).toLowerCase().includes(t.toLowerCase())) {
+                                authorMap[author].topics.add(t);
+                            }
+                        });
+                    });
+                });
+                
+                await sleep(2000);
+            }
+            
+            // Filter and rank authors
+            const rankedAuthors = Object.values(authorMap)
+                .filter(function(a) { return a.papers.length >= minPapers; })
+                .map(function(a) {
+                    return {
+                        name: a.name,
+                        paperCount: a.papers.length,
+                        topics: Array.from(a.topics),
+                        papers: a.papers,
+                        score: a.papers.length * a.topics.size
+                    };
+                })
+                .sort(function(a, b) { return b.score - a.score; })
+                .slice(0, maxAuthors);
+            
+            addLog('✓ Found ' + rankedAuthors.length + ' relevant authors', 'success');
+            displayAuthors(rankedAuthors);
+            
+            if (rankedAuthors.length > 0) {
+                await addAuthorsToCandidates(rankedAuthors);
+            }
+        }
+
+        async function findSimilarToHighRanked() {
+            document.getElementById('logsList').innerHTML = '';
+            addLog('🎯 Analyzing P0/P1 papers...', 'info');
+            
+            try {
+                const response = await fetch('https://api.airtable.com/v0/' + config.baseId + '/' + encodeURIComponent(config.publicationsTable) + '?filterByFormula=OR({Karan\'s Notes}="P0",{Karan\'s Notes}="P1")', {
+                    headers: { 'Authorization': 'Bearer ' + config.apiKey }
+                });
+
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                
+                if (data.records.length === 0) {
+                    addLog('No P0/P1 papers found', 'warning');
+                    return;
+                }
+
+                addLog('📚 Analyzing ' + data.records.length + ' highly ranked papers', 'success');
+                
+                const authorNames = [];
+                const specificTerms = [];
+                
+                data.records.forEach(function(r) {
+                    const authorsText = r.fields[fieldMapping.papers.authors] || '';
+                    const authors = authorsText.split(',').map(function(a) { return a.trim(); }).filter(function(a) { return a && a !== 'Unknown'; });
+                    authors.forEach(function(a) { authorNames.push(a); });
+                    
+                    const text = ((r.fields[fieldMapping.papers.title] || '') + ' ' + (r.fields[fieldMapping.papers.abstract] || '')).toLowerCase();
+                    
+                    const methodPatterns = [
+                        /selective state space/gi, /structured state space/gi, /\bS4[A-Z]?\b/g,
+                        /mamba[- ]?\d*/gi, /linear attention/gi, /sub[- ]?quadratic/gi,
+                        /efficient attention/gi, /long[- ]?range/gi, /sequence[- ]?to[- ]?sequence/gi
+                    ];
+                    
+                    methodPatterns.forEach(function(pattern) {
+                        const matches = text.match(pattern);
+                        if (matches) matches.forEach(function(m) { specificTerms.push(m.toLowerCase().trim()); });
+                    });
+                });
+
+                const authorCounts = {};
+                authorNames.forEach(function(a) { authorCounts[a] = (authorCounts[a] || 0) + 1; });
+                
+                const topAuthors = Object.keys(authorCounts)
+                    .sort(function(a, b) { return authorCounts[b] - authorCounts[a]; })
+                    .slice(0, 10);
+                
+                addLog('👥 Top authors: ' + topAuthors.slice(0, 5).join(', '), 'info');
+                
+                const uniqueTerms = Array.from(new Set(specificTerms)).slice(0, 8);
+                addLog('🎯 Key methods: ' + uniqueTerms.join(', '), 'info');
+                
+                const allPapers = [];
+                const allAuthors = {};
+                
+                // Search by top authors
+                addLog('--- Phase 1: Author papers ---', 'info');
+                for (let i = 0; i < Math.min(topAuthors.length, 5); i++) {
+                    addLog('Searching: ' + topAuthors[i], 'info');
+                    const papers = await searchArxiv('au:' + topAuthors[i], 20);
+                    allPapers.push.apply(allPapers, papers);
+                    
+                    papers.forEach(function(p) {
+                        p.authors.split(',').forEach(function(a) {
+                            const name = a.trim();
+                            if (!allAuthors[name]) allAuthors[name] = { name: name, papers: [] };
+                            allAuthors[name].papers.push(p);
+                        });
+                    });
+                    
+                    await sleep(2000);
+                }
+                
+                // Search by methods
+                addLog('--- Phase 2: Method papers ---', 'info');
+                for (let i = 0; i < uniqueTerms.length; i++) {
+                    addLog('Searching: "' + uniqueTerms[i] + '"', 'info');
+                    const papers = await searchArxiv(uniqueTerms[i], 20);
+                    allPapers.push.apply(allPapers, papers);
+                    
+                    papers.forEach(function(p) {
+                        p.authors.split(',').forEach(function(a) {
+                            const name = a.trim();
+                            if (!allAuthors[name]) allAuthors[name] = { name: name, papers: [] };
+                            allAuthors[name].papers.push(p);
+                        });
+                    });
+                    
+                    await sleep(2000);
+                }
+                
+                const uniquePapers = Array.from(new Map(allPapers.map(function(p) { return [p.title.toLowerCase(), p]; })).values());
+                
+                // Score papers
+                const scoredPapers = uniquePapers.map(function(paper) {
+                    let score = 0;
+                    const paperText = (paper.title + ' ' + paper.abstract).toLowerCase();
+                    const paperAuthors = paper.authors.toLowerCase();
+                    
+                    topAuthors.forEach(function(author) {
+                        if (paperAuthors.includes(author.toLowerCase())) score += 10;
+                    });
+                    
+                    uniqueTerms.forEach(function(term) {
+                        if (paperText.includes(term)) score += 5;
+                    });
+                    
+                    const year = parseInt(paper.date ? paper.date.split('-')[0] : '2020');
+                    if (year >= 2024) score += 3;
+                    if (year >= 2023) score += 2;
+                    
+                    return { paper: paper, score: score };
+                });
+                
+                scoredPapers.sort(function(a, b) { return b.score - a.score; });
+                const topPapers = scoredPapers.filter(function(sp) { return sp.score > 5; }).map(function(sp) { return sp.paper; }).slice(0, 50);
+                
+                const topAuthorsRanked = Object.values(allAuthors)
+                    .filter(function(a) { return a.papers.length >= 2; })
+                    .sort(function(a, b) { return b.papers.length - a.papers.length; })
+                    .slice(0, 30);
+                
+                addLog('✓ Found ' + topPapers.length + ' papers, ' + topAuthorsRanked.length + ' authors', 'success');
+                
+                displayCombinedResults(topPapers, topAuthorsRanked);
+                
+                await addPapersToAirtable(topPapers);
+                await addAuthorsToCandidates(topAuthorsRanked.map(function(a) {
+                    return { name: a.name, paperCount: a.papers.length, papers: a.papers, topics: uniqueTerms };
+                }));
+
+            } catch (error) {
+                addLog('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function discoverNetwork() {
+            const author = document.getElementById('networkAuthor').value.trim();
+            if (!author) {
+                alert('Please enter an author name');
+                return;
+            }
+
+            document.getElementById('logsList').innerHTML = '';
+            addLog('🕸️ Discovering network for: ' + author, 'info');
+            
+            const depth = parseInt(document.getElementById('networkDepth').value) || 2;
+            const minCollabs = parseInt(document.getElementById('networkMinCollabs').value) || 2;
+            
+            const network = { authors: {}, edges: [] };
+            network.authors[author] = { name: author, level: 0, papers: [] };
+            
+            // Find seed author's papers
+            addLog('Finding papers by ' + author, 'info');
+            const seedPapers = await searchArxiv('au:' + author, 50);
+            network.authors[author].papers = seedPapers;
+            
+            // Extract collaborators
+            const collaborators = {};
+            seedPapers.forEach(function(paper) {
+                paper.authors.split(',').forEach(function(a) {
+                    const name = a.trim();
+                    if (name && name !== author && name !== 'Unknown') {
+                        if (!collaborators[name]) collaborators[name] = 0;
+                        collaborators[name]++;
+                    }
+                });
+            });
+            
+            const topCollaborators = Object.keys(collaborators)
+                .filter(function(c) { return collaborators[c] >= minCollabs; })
+                .sort(function(a, b) { return collaborators[b] - collaborators[a]; })
+                .slice(0, 15);
+            
+            addLog('Found ' + topCollaborators.length + ' frequent collaborators', 'success');
+            
+            // Add level 1
+            for (let i = 0; i < topCollaborators.length; i++) {
+                const collab = topCollaborators[i];
+                network.authors[collab] = { name: collab, level: 1, papers: [], collabCount: collaborators[collab] };
+                network.edges.push({ from: author, to: collab, weight: collaborators[collab] });
+                
+                if (depth >= 2 && i < 5) {
+                    addLog('Exploring ' + collab + '\'s network...', 'info');
+                    const collabPapers = await searchArxiv('au:' + collab, 30);
+                    network.authors[collab].papers = collabPapers;
+                    await sleep(2000);
+                }
+            }
+            
+            addLog('✓ Network mapped: ' + Object.keys(network.authors).length + ' authors', 'success');
+            displayNetwork(network);
+            
+            await addAuthorsToCandidates(Object.values(network.authors).map(function(a) {
+                return { name: a.name, paperCount: a.papers.length, papers: a.papers, topics: [] };
+            }));
+        }
+    </script>
+</body>
+</html>
